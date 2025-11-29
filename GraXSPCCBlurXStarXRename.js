@@ -1,11 +1,10 @@
-#feature-id    GraXSPCCBlurXStarXRename
+#feature-id    ProcessAndRename
 #feature-info  Applies GradientCorrection, SPCC, BlurXTerminator, and StarXTerminator with a UI and renaming capability.
 
 /*
  * Script: Process and Rename with UI
  * * Includes:
  * - UI to toggle stages
- * - New Instance Icon (Fixed)
  * - Renaming logic (Selectable)
  * - Handles separate "Stars" image renaming if StarXTerminator is used
  */
@@ -28,6 +27,7 @@ var runBlurX    = (typeof p_runBlurX !== 'undefined')    ? p_runBlurX    : undef
 var runStarX    = (typeof p_runStarX !== 'undefined')    ? p_runStarX    : undefined;
 var runRename   = (typeof p_runRename !== 'undefined')   ? p_runRename   : undefined;
 var targetName  = (typeof p_targetName !== 'undefined')  ? p_targetName  : "RGB";
+var targetStarsName = (typeof p_targetStarsName !== 'undefined') ? p_targetStarsName : "RGB_Stars";
 var isHeadless  = (typeof p_isHeadless !== 'undefined')  ? p_isHeadless  : false;
 
 // ----------------------------------------------------------------------------
@@ -177,10 +177,13 @@ function ProcessAndRenameDialog() {
     
     // Logic to toggle the name field
     this.renameChk.onClick = function() {
-        this.dialog.nameEdit.enabled = this.checked;
-        this.dialog.nameLabel.enabled = this.checked;
+        dlg.nameEdit.enabled = this.checked;
+        dlg.nameLabel.enabled = this.checked;
+        dlg.starsNameEdit.enabled = this.checked;
+        dlg.starsNameLabel.enabled = this.checked;
     };
 
+    // Main Image Name
     this.nameLabel = new Label(this);
     this.nameLabel.text = "Final Image Name:";
     this.nameLabel.textAlignment = TextAlign_Right | TextAlign_VertCenter;
@@ -197,66 +200,48 @@ function ProcessAndRenameDialog() {
     this.nameSizer.add(this.nameEdit);
     this.nameSizer.addStretch();
 
+    // Stars Image Name
+    this.starsNameLabel = new Label(this);
+    this.starsNameLabel.text = "Stars Image Name:";
+    this.starsNameLabel.textAlignment = TextAlign_Right | TextAlign_VertCenter;
+    this.starsNameLabel.enabled = this.renameChk.checked;
+    
+    this.starsNameEdit = new Edit(this);
+    this.starsNameEdit.text = targetStarsName;
+    this.starsNameEdit.minWidth = 150;
+    this.starsNameEdit.enabled = this.renameChk.checked;
+
+    this.starsNameSizer = new HorizontalSizer;
+    this.starsNameSizer.spacing = 6;
+    this.starsNameSizer.add(this.starsNameLabel);
+    this.starsNameSizer.add(this.starsNameEdit);
+    this.starsNameSizer.addStretch();
+
     this.nameGroup = new GroupBox(this);
     this.nameGroup.title = "Output";
     this.nameGroup.sizer = new VerticalSizer;
     this.nameGroup.sizer.margin = 10;
     this.nameGroup.sizer.spacing = 6;
-    this.nameGroup.sizer.add(this.renameChk); // Add the new checkbox
+    this.nameGroup.sizer.add(this.renameChk); 
     this.nameGroup.sizer.add(this.nameSizer);
+    this.nameGroup.sizer.add(this.starsNameSizer); // Add stars name row
 
-    // -- Buttons & Instance Icon
+    // -- Buttons
     
-    // Instance Button (Standard PixInsight New Instance Icon)
-    this.instanceBtn = new ToolButton(this);
-    this.instanceBtn.icon = this.scaledResource( ":/process-interface/new-instance.png" );
-    this.instanceBtn.setScaledFixedSize( 24, 24 );
-    this.instanceBtn.toolTip = "New Instance";
-    
-    this.instanceBtn.onMousePress = function() {
-        this.pushed = false;
-        
-        var P = new ProcessInstance( "Script" );
-        var code = "";
-        
-        // Embed the current state as variables
-        // Use 'dlg' to access the checkboxes because 'this' refers to the button here.
-        code += "var p_runGradient = " + dlg.gradChk.checked + ";\n";
-        code += "var p_runSPCC = " + dlg.spccChk.checked + ";\n";
-        code += "var p_runBlurX = " + dlg.blurChk.checked + ";\n";
-        code += "var p_runStarX = " + dlg.starChk.checked + ";\n";
-        code += "var p_runRename = " + dlg.renameChk.checked + ";\n";
-        code += "var p_targetName = \"" + dlg.nameEdit.text + "\";\n";
-        code += "var p_isHeadless = true;\n";
-        
-        // Include the script logic from the file
-        // Note: The script file must be saved on disk for this to work.
-        var currentFile = File.fullPath(#__FILE__);
-        // Safely escape backslashes for Windows paths in the JS string for code generation
-        var safePath = currentFile.replace(/\\/g, "/");
-        
-        code += "#include \"" + safePath + "\"\n";
-        code += "main();\n"; // Ensure main is run when the instance is dropped/executed
-        
-        P.sourceCode = code;
-        P.launch(); 
-    };
-
     this.okBtn = new PushButton(this);
     this.okBtn.text = "Execute";
     this.okBtn.onClick = function() {
-        this.dialog.ok();
+        dlg.ok();
     };
 
     this.cancelBtn = new PushButton(this);
     this.cancelBtn.text = "Cancel";
     this.cancelBtn.onClick = function() {
-        this.dialog.cancel();
+        dlg.cancel();
     };
 
     this.btnSizer = new HorizontalSizer;
     this.btnSizer.spacing = 6;
-    this.btnSizer.add(this.instanceBtn); // Left aligned instance button
     this.btnSizer.addStretch();
     this.btnSizer.add(this.okBtn);
     this.btnSizer.add(this.cancelBtn);
@@ -295,8 +280,9 @@ function main() {
             runSPCC = dlg.spccChk.checked;
             runBlurX = dlg.blurChk.checked;
             runStarX = dlg.starChk.checked;
-            runRename = dlg.renameChk.checked; // Capture new option
+            runRename = dlg.renameChk.checked; 
             targetName = dlg.nameEdit.text;
+            targetStarsName = dlg.starsNameEdit.text; // Capture the stars name
         }
     }
 
@@ -340,19 +326,21 @@ function main() {
             P.executeOn( view );
             
             // Rename logic
-            if (runRename && targetName && targetName.length > 0) {
+            if (runRename) {
                 // Rename main image (Starless if StarX ran)
-                view.id = targetName;
-                console.noteln( "Renamed main image to: " + targetName );
+                if (targetName && targetName.length > 0) {
+                    view.id = targetName;
+                    console.noteln( "Renamed main image to: " + targetName );
+                }
 
                 // If StarXTerminator was run, look for the generated "Stars" image and rename it too
-                if (runStarX) {
+                if (runStarX && targetStarsName && targetStarsName.length > 0) {
                     var starsId = originalId + "_stars";
                     var starsWindow = ImageWindow.windowById( starsId );
                     
                     if ( !starsWindow.isNull ) {
-                        starsWindow.mainView.id = targetName + "_Stars";
-                        console.noteln( "Renamed stars image to: " + targetName + "_Stars" );
+                        starsWindow.mainView.id = targetStarsName;
+                        console.noteln( "Renamed stars image to: " + targetStarsName );
                     } else {
                         console.warningln( "Warning: Could not locate expected stars image: " + starsId );
                     }
